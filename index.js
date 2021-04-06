@@ -3,12 +3,38 @@ const crypto = require('crypto');
 const rp = require('request-promise');
 const app = express();
 const env = require('./enviornment');
+const fs = require('fs');
+const readline = require('readline');
+
 const port = 3000;
+const TOKEN_FILE = './token.txt';
 // prevent no duplicate token-id pair by using two maps
 // token -> userId
 const tokenUserTable = {};
 // userId -> token
 const reverseTable = {};
+// write to file
+loadTableFromFile(TOKEN_FILE);
+
+function loadTableFromFile(path) {
+    fs.access(path, fs.F_OK, (err) => {
+        if (err) {
+            console.error(err);
+            fs.writeFile(path, '', err => err);
+            return;
+        }
+        // load from existing file
+        const file = readline.createInterface({
+            input: fs.createReadStream(path),
+            output: process.stdout,
+            terminal: false
+        });
+        file.on('line', (line) => {
+            const data = line.split(',');
+            addEntry(data[0], data[1]);
+        });
+    })
+}
 
 function getSettingPOST(messageType, body) {
     return {
@@ -64,9 +90,19 @@ function pushToken(token, message) {
         });
 }
 
-function addEntry(token, userId) {
+function addEntry(token, userId, writeFile = false) {
     tokenUserTable[token] = userId;
     reverseTable[userId] = token;
+    if (!writeFile) {
+        return;
+    }
+    fs.appendFile(TOKEN_FILE, `${token},${userId}\n,`, err => {
+        if (err) {
+            console.error(err)
+            return
+        }
+        //done!
+    });
 }
 
 app.use(express.json()) // for parsing application/json
@@ -99,7 +135,7 @@ app.use((req, res) => {
                 } else {
                     // not found, create token
                     const userToken = generateFourDigitToken();
-                    addEntry(userToken, source.userId);
+                    addEntry(userToken, source.userId, true);
                     replyPromises.push(replyToken(userToken, event.replyToken));
                 }
             }
